@@ -1,0 +1,72 @@
+name: CI Karsajobs Backend
+
+on:
+  push:
+    branches:
+      - karsajobs
+  pull_request:
+    branches:
+      - karsajobs
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+
+  lint-dockerfile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install hadolint
+        run: |
+          wget -q -O hadolint \
+            https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64
+          chmod +x hadolint
+          ./hadolint --version
+
+      - name: Run hadolint
+        run: ./hadolint --failure-threshold error Dockerfile
+
+
+  test-app:
+    runs-on: ubuntu-latest
+    needs: lint-dockerfile
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.15'
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run unit test
+        run: go test -v -short --count=1 $(go list ./...)
+
+  build-app-karsajobs:
+    runs-on: ubuntu-latest
+
+    needs: test-app
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+
+      - name: Login to GitHub Container Registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build Docker image
+        run: |
+          docker build -t ghcr.io/${{ github.repository_owner }}/karsajobs:latest .
+
+      - name: Push Docker image
+        run: |
+          docker push ghcr.io/${{ github.repository_owner }}/karsajobs:latest
